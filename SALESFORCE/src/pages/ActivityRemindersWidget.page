@@ -1,0 +1,215 @@
+<apex:page controller="ActivityRemindersWidgetController">
+    <apex:includeScript value="/support/console/26.0/integration.js"/>
+    <apex:includeScript value="/soap/ajax/26.0/connection.js"/>
+    <apex:form >
+    	<apex:actionFunction name="refreshAll" action="{!refresh}" rerender="remindersPanel" />
+    </apex:form>
+    
+    <script type="text/javascript">
+    
+        function newTaskTab(){
+            sforce.console.openPrimaryTab(null, '/00T/e', true, 'New Task', function (result) {
+	 			if (result.success) {
+	 				closeSelf();
+	 			}
+	 		});
+        }
+        
+        function viewAllTaskTab(){
+            sforce.console.openPrimaryTab(null, '/007', true, 'View All Tasks', function (result) {
+	 			if (result.success) {
+	 				closeSelf();
+	 			}
+	 		});
+        }
+        
+        function closeSelf() {
+        	 sforce.console.setCustomConsoleComponentWindowVisible(false);
+        }
+        
+        function callbackManager(numberOfCallbacksExpected, callbackManagerHistory, callbackFunction) {
+	   		this.objectIDs = new Array();
+	   		this.parentIDs = new Array();
+	   		this.tabIDs = new Array();
+	   		this.numberOfCallbacksComplete = 0;
+	   		this.numberOfCallbacksExpected = numberOfCallbacksExpected;
+	   		this.callbackFunction = callbackFunction;
+	   		
+	   		if (callbackManagerHistory!=null) {
+		   		for (var i = 0; i < callbackManagerHistory.tabIDs.length; i++) {
+		   			this.objectIDs.push(callbackManagerHistory.objectIDs[i] );
+		   			this.tabIDs.push( callbackManagerHistory.tabIDs[i] );
+		   			this.parentIDs.push( callbackManagerHistory.parentIDs[i] );
+		   		}
+	   		}
+	   	}
+	   	callbackManager.prototype.callbackComplete = function() {
+			this.numberOfCallbacksComplete++;
+		  
+			if (this.numberOfCallbacksComplete>=this.numberOfCallbacksExpected) {
+		  		//we have hit all callback expected
+		  		this.callbackFunction( this );
+		  	}
+		};
+		
+	    function openTab(recordID, recordName, autoClose) {
+	    	buildTabIDs( trimID(recordID), recordName, autoClose );
+	   	}
+	   	
+	   	function trimID( IDstring ) {
+	   		if(IDstring.length >= 15){
+	        	return IDstring.substring(0, 15);
+	        } else {
+	        	return IDstring;
+	        }
+	   	}
+	   	
+	   	function launchTab(recordID, recordName, findAllSubTabCallbackResult, autoClose) {
+	   		for (var i = 0; i < findAllSubTabCallbackResult.tabIDs.length; i++) {
+	   			if (findAllSubTabCallbackResult.objectIDs[i]==recordID) {
+	   				//this the tab to open, check if it has a parent sub or primary
+	   				if (findAllSubTabCallbackResult.parentIDs[i]==null) {
+	   					//will open as primary
+	   					sforce.console.focusPrimaryTabById(findAllSubTabCallbackResult.tabIDs[i], function (result) {
+	   						if (!result.success) {
+	   							alert("Error focussing on primary tab: " + recordName);
+	   						} else {
+	   							if (autoClose) closeSelf();
+   							}
+	   					});
+	   					
+	   					return;
+	   				} else {
+	   					sforce.console.focusSubtabById(findAllSubTabCallbackResult.tabIDs[i], function (result) {
+	   						if (!result.success) {
+	   							alert("Error focussing on sub tab: " + recordName);
+	   						} else {
+	   							if (autoClose) closeSelf();
+   							}
+	   					});
+	   					
+	   					return;
+	   				}
+	   			}
+	   		}
+	   		
+	   		//will open as primary
+	 		sforce.console.openPrimaryTab(null, '/'+recordID, true, recordName, function (result) {
+	 			if (!result.success) {
+	 				alert("Error opening primary tab: " + recordName);
+	 			} else {
+	   				if (autoClose) closeSelf();
+	   			}
+	 		});
+	   	}
+	   	
+	   	function buildTabIDs(recordID, recordName, autoClose) {
+	   		//we want to try and find the ID of the record to see if its already open
+	        //we are now going to check all the subtabs
+	        sforce.console.getPrimaryTabIds( function (result) {
+	        	//callbackManager chains the callbacks
+	        	findTabCallBackChain = new callbackManager(result.ids.length, null, function (findTabCallbackResult) {
+	        		//should now have all the primary tabs
+	        		findAllSubTabCallBackChain = new callbackManager(findTabCallbackResult.tabIDs.length, findTabCallbackResult, function (findAllSubTabCallbackResult) {
+		        		//should now have all the sub tabs
+		        		launchTab(recordID, recordName, findAllSubTabCallbackResult, autoClose);
+	        		});
+	        		//iterate each of the primary tabs to then get all their sub tabs
+	        		for (var i = 0; i < findTabCallbackResult.tabIDs.length; i++) {
+	        			thisTabID = findTabCallbackResult.tabIDs[i];
+		        		sforce.console.getSubtabIds( thisTabID, function (result) {
+			        		findSubTabCallBackChain = new callbackManager(result.ids.length, findTabCallbackResult, function (findSubTabCallbackResult) {
+				        		//should now have all this tabs sub tabs
+				        		
+				        		//take the callback result and update the AllSubTab Chain
+				        		if (findSubTabCallbackResult!=null) {
+							   		for (var i = 0; i < findSubTabCallbackResult.tabIDs.length; i++) {
+							   			findAllSubTabCallBackChain.objectIDs.push(findSubTabCallbackResult.objectIDs[i] );
+							   			findAllSubTabCallBackChain.tabIDs.push( findSubTabCallbackResult.tabIDs[i] );
+							   			findAllSubTabCallBackChain.parentIDs.push( findSubTabCallbackResult.parentIDs[i] );
+							   		}
+						   		}
+				        		
+				        		findAllSubTabCallBackChain.callbackComplete();
+				        	});
+				        	getPageInfos(result.ids, thisTabID, findSubTabCallBackChain);
+			        	});	
+		        	}
+	        	});
+	        	getPageInfos(result.ids, null, findTabCallBackChain);
+	        });
+	    }
+	    
+	    function getPageInfos(tabIDArray, parentID, callBackManagerInstance) {
+	    	//now need to loop through the results and add them to our tab list
+	       	for (var i = 0; i < tabIDArray.length; i++) {
+	       		//get the details for the tab
+	       		callBackManagerInstance.tabIDs.push( tabIDArray[i] );//add tabid to array
+	       		callBackManagerInstance.parentIDs.push( parentID );//add parentid to array
+	       		sforce.console.getPageInfo(tabIDArray[i], function (result) {
+	     			pageInfo = JSON.parse(result.pageInfo);
+	 
+	     			//add to map with recordID as key and tabId as value
+	     			callBackManagerInstance.objectIDs.push( pageInfo.objectId);//add recordid to array
+	     			callBackManagerInstance.callbackComplete();
+	     		});	
+	       	}
+	    }
+	    
+	    
+	    /*
+	    Add Additional logic here...
+	    */
+	    
+        
+        
+    </script>
+    <apex:form >
+    <div class="remindersContainer">
+        <apex:pageBlock >
+            <apex:outputPanel id="myButtons">
+                <apex:commandButton action="{!completeTasks}" value="Mark Complete" rendered="{!showReminders}" reRender="remindersPanel, myButtons"/>
+                <apex:commandButton action="{!refresh}" value="Refresh" style="float:right;"/>
+                <apex:commandButton action="{!newTask}" value="New Reminder" oncomplete="newTaskTab();" style="float:right;"/>
+            </apex:outputPanel>
+            <br/><br/>        
+            
+            <apex:outputPanel id="remindersPanel">
+            <apex:outputPanel id="myPanel" rendered="{!showReminders}" styleClass="fixedTable">
+                <apex:pageMessages id="theMessages" />
+                <apex:actionFunction name="checkAll" action="{!checkUncheckAllReminders}" rerender="remindersPanel" />
+                <apex:pageBlockTable value="{!tasks}" var="t" align="center" columnsWidth="4%, 15%, 27%, 12%, 15%, 15%, 12%">
+                    <apex:column >
+                        <apex:facet name="header">
+                            <apex:inputCheckbox value="{!checkAllReminders}" onclick="checkAll();"/>
+                        </apex:facet>
+                        <apex:inputCheckbox value="{!t.setComplete}"/>
+                    </apex:column>
+                    <apex:column headerValue="Reminder Date" value="{!t.task.ReminderDateTime}" />
+                    <apex:column headerValue="Subject">
+                    	<apex:outputLink value="#" onclick="openTab('{!t.task.Id}', 'Task', true);">
+                   			<apex:outputText value="{!t.task.Subject}"/>
+                   		</apex:outputLink>
+                    </apex:column>
+                    <apex:column value="{!t.task.Status}" />
+                    <apex:column headerValue="Who">
+                   		<apex:outputLink value="#" onclick="openTab('{!t.task.whoID}', '{!t.task.who.Name}', false);">
+                   			<apex:outputText value="{!t.task.who.Name}"/>
+                   		</apex:outputLink>
+                    </apex:column>
+                    <apex:column headerValue="What">
+                   		<apex:outputLink value="#" onclick="openTab('{!t.task.whatID}', '{!t.task.what.Name}', false);">
+                   			<apex:outputText value="{!t.task.what.Name}"/>
+                   		</apex:outputLink>
+                    </apex:column>
+                </apex:pageBlockTable>
+                <apex:outputPanel rendered="{!showMoreLink}">
+                    <a href="#" onclick="viewAllTaskTab();">Show all</a>
+                </apex:outputPanel>
+            </apex:outputPanel>
+            <apex:outputPanel rendered="{!!showReminders}">No Reminders</apex:outputPanel>
+            </apex:outputPanel>
+        </apex:pageBlock>
+    </div>
+    </apex:form>
+</apex:page>

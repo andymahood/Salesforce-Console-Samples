@@ -1,0 +1,345 @@
+<apex:page standardController="Case" extensions="RelatedCustomerCasesController" sidebar="false"  tabStyle="Contact">
+<apex:stylesheet value="{!URLFOR($Resource.consoleWidgetResources, 'css/RelatedCustomersComponentStyle.css')}"/>
+<apex:includeScript value="{!URLFOR($Resource.consoleWidgetResources, 'js/jquery.min.js')}"/>
+<apex:includeScript value="{!URLFOR($Resource.consoleWidgetResources, 'js/jcarousellite_1.0.1.js')}"/>
+<apex:includeScript value="{!URLFOR($Resource.consoleWidgetResources, 'js/jquery.mousewheel.js')}"/>
+<apex:includeScript value="/support/console/28.0/integration.js"/>
+ 
+<script type="text/javascript">
+   	function callbackManager(numberOfCallbacksExpected, callbackManagerHistory, callbackFunction) {
+   		this.objectIDs = new Array();
+   		this.parentIDs = new Array();
+   		this.tabIDs = new Array();
+   		this.numberOfCallbacksComplete = 0;
+   		this.numberOfCallbacksExpected = numberOfCallbacksExpected;
+   		this.callbackFunction = callbackFunction;
+   		
+   		if (callbackManagerHistory!=null) {
+	   		for (var i = 0; i < callbackManagerHistory.tabIDs.length; i++) {
+	   			this.objectIDs.push(callbackManagerHistory.objectIDs[i] );
+	   			this.tabIDs.push( callbackManagerHistory.tabIDs[i] );
+	   			this.parentIDs.push( callbackManagerHistory.parentIDs[i] );
+	   		}
+   		}
+   	}
+   	callbackManager.prototype.callbackComplete = function() {
+		this.numberOfCallbacksComplete++;
+	  
+		if (this.numberOfCallbacksComplete>=this.numberOfCallbacksExpected) {
+	  		//we have hit all callback expected
+	  		this.callbackFunction( this );
+	  	}
+	};
+	
+    function openTab(recordID, recordName) {
+    	buildTabIDs( trimID(recordID), recordName );
+   	}
+   	
+   	function trimID( IDstring ) {
+   		if(IDstring.length >= 15){
+        	return IDstring.substring(0, 15);
+        } else {
+        	return IDstring;
+        }
+   	}
+   	
+   	function launchTab(recordID, recordName, findAllSubTabCallbackResult) {
+   		for (var i = 0; i < findAllSubTabCallbackResult.tabIDs.length; i++) {
+   			if (findAllSubTabCallbackResult.objectIDs[i]==recordID) {
+   				//this the tab to open, check if it has a parent sub or primary
+   				if (findAllSubTabCallbackResult.parentIDs[i]==null) {
+   					//will open as primary
+   					sforce.console.focusPrimaryTabById(findAllSubTabCallbackResult.tabIDs[i], function (result) {
+   						if (!result.success) {
+   							alert("Error focussing on primary tab: " + recordName);
+   						}
+   					});
+   					
+   					return;
+   				} else {
+   					sforce.console.focusSubtabById(findAllSubTabCallbackResult.tabIDs[i], function (result) {
+   						if (!result.success) {
+   							alert("Error focussing on sub tab: " + recordName);
+   						}
+   					});
+   					
+   					return;
+   				}
+   			}
+   		}
+   		
+   		//will open as primary
+ 		sforce.console.openPrimaryTab(null, '/'+recordID, true, recordName, function (result) {
+ 			if (!result.success) {
+ 				alert("Error opening primary tab: " + recordName);
+ 			}
+ 		});
+   	}
+   	
+   	function buildTabIDs(recordID, recordName) {
+   		//we want to try and find the ID of the record to see if its already open
+        //we are now going to check all the subtabs
+        sforce.console.getPrimaryTabIds( function (result) {
+        	//callbackManager chains the callbacks
+        	findTabCallBackChain = new callbackManager(result.ids.length, null, function (findTabCallbackResult) {
+        		//should now have all the primary tabs
+        		findAllSubTabCallBackChain = new callbackManager(findTabCallbackResult.tabIDs.length, findTabCallbackResult, function (findAllSubTabCallbackResult) {
+	        		//should now have all the sub tabs
+	        		launchTab(recordID, recordName, findAllSubTabCallbackResult);
+        		});
+        		//iterate each of the primary tabs to then get all their sub tabs
+        		for (var i = 0; i < findTabCallbackResult.tabIDs.length; i++) {
+        			thisTabID = findTabCallbackResult.tabIDs[i];
+	        		sforce.console.getSubtabIds( thisTabID, function (result) {
+		        		findSubTabCallBackChain = new callbackManager(result.ids.length, findTabCallbackResult, function (findSubTabCallbackResult) {
+			        		//should now have all this tabs sub tabs
+			        		
+			        		//take the callback result and update the AllSubTab Chain
+			        		if (findSubTabCallbackResult!=null) {
+						   		for (var i = 0; i < findSubTabCallbackResult.tabIDs.length; i++) {
+						   			findAllSubTabCallBackChain.objectIDs.push(findSubTabCallbackResult.objectIDs[i] );
+						   			findAllSubTabCallBackChain.tabIDs.push( findSubTabCallbackResult.tabIDs[i] );
+						   			findAllSubTabCallBackChain.parentIDs.push( findSubTabCallbackResult.parentIDs[i] );
+						   		}
+					   		}
+			        		
+			        		findAllSubTabCallBackChain.callbackComplete();
+			        	});
+			        	getPageInfos(result.ids, thisTabID, findSubTabCallBackChain);
+		        	});	
+	        	}
+        	});
+        	getPageInfos(result.ids, null, findTabCallBackChain);
+        });
+    }
+    
+    function getPageInfos(tabIDArray, parentID, callBackManagerInstance) {
+    	//now need to loop through the results and add them to our tab list
+       	for (var i = 0; i < tabIDArray.length; i++) {
+       		//get the details for the tab
+       		callBackManagerInstance.tabIDs.push( tabIDArray[i] );//add tabid to array
+       		callBackManagerInstance.parentIDs.push( parentID );//add parentid to array
+       		sforce.console.getPageInfo(tabIDArray[i], function (result) {
+     			pageInfo = JSON.parse(result.pageInfo);
+ 
+     			//add to map with recordID as key and tabId as value
+     			callBackManagerInstance.objectIDs.push( pageInfo.objectId);//add recordid to array
+     			callBackManagerInstance.callbackComplete();
+     		});	
+       	}
+    }
+    
+    function testRefreshTab() {
+        sforce.console.getFocusedSubtabId(refreshTab);
+    }
+    
+    var refreshTab = function showTabId(result) {
+           sforce.console.refreshSubtabById(result.id, true, refreshSuccess);
+    };
+    
+    var refreshSuccess = function refreshSuccess(result) {
+    	//Report whether refreshing the subtab was successful
+    };
+    
+    
+    $(document).ready(function() {
+    	$('img[id*="thisPBS"]').each(function(index, value) {
+    		if(index != 0) {
+    			twistSection(this);
+   			}
+  		});
+        
+        $(".anyClass .images").jCarouselLite({
+		    btnNext: ".anyClass .next",
+		    btnPrev: ".anyClass .prev",
+		    circular: true,
+		    mouseWheel: true,
+		    visible: 3
+		});
+    });
+    
+    function collapseAll() {
+        $('img[id*="thisPBS"]').each(function(index, value) {
+                twistSection(this);
+        });
+    }
+   
+	function noenter(ev)  {
+	   	if (window.event && window.event.keyCode == 13 || ev.which == 13) {
+	   		doSearchAF();
+	       	return false;
+	     } else {
+	          return true;
+	     }
+	 }
+ 
+    </script>
+    
+    <style>
+
+		.productImage {
+			position:absolute;
+			top:0;
+			left:0;
+			width:100%;
+			color:#ffffff;
+			font-family: arial, helvetica, clean, sans-serif;
+			text-transform:uppercase;
+		}
+		
+	</style>  
+		    
+    
+<apex:form id="mainForm">
+
+<script>
+
+	function accountRefreshTab() {
+		if ("{!isInserted}" == "true" && "{!theCase.Id}" != "" && "{!theCase.Id}" != "null") 
+			sforce.console.getFocusedSubtabId(refreshTab);
+	}
+	
+</script>
+    
+    <div class="container">
+    
+    <apex:pageBlock id="productBlock" rendered="{!products.size > 0}">  
+		<div align="center" class="anyClass">
+			<table>
+				<tr>
+					<td>
+						<button onclick="return false;" class="prev" style="height:100px;background:#f2f3f3;color:#000000;">&lt;</button>
+					</td>
+					<td>
+						<div class="images">
+						    <ul>
+						    <apex:repeat value="{!products}" var="product">
+						    	<li style="margin:0;position:relative;"  onclick="openTab('{!product.oppID}', '{!product.oppName}');"><img src="{!product.imageURL}" width="100" height="100" />
+						        	<div class="productImage"></div>
+						        </li>
+						    </apex:repeat>
+						    </ul>
+						</div>
+					</td>
+					<td>
+						<button onclick="return false;" class="next" style="height:100px;background:#f2f3f3;color:#000000;">&gt;</button>
+					</td>
+				</tr>
+			</table>
+		</div>
+	</apex:pageBlock>
+    
+    <apex:pageBlock id="customersBlock" rendered="{!(!showNewCust)}">
+        
+        <apex:PageMessages id="mess" />
+        
+        <apex:pageBlockSection title="Search Customer" columns="1" collapsible="false" rendered="{!isCustomersEmpty}">
+	        <apex:outputPanel >
+	        	<apex:inputText value="{!searchParam}" onkeypress="return noenter(event);"/>
+	        	<apex:actionFunction name="doSearchAF" action="{!searchCustomers}" reRender="customersBlock" oncomplete="collapseAll();"/>
+	        	<apex:commandButton action="{!searchCustomers}" value="Search" reRender="customersBlock" oncomplete="collapseAll();"/>
+	        	<apex:commandButton action="{!showNewCustomer}" value="New Customer" style="float: right;" rerender="mainForm"/>
+        	</apex:outputPanel>
+        </apex:pageBlockSection>
+
+        
+        <apex:repeat var="customer" value="{!customers}">
+            <apex:pageBlockSection title="{!customer.contact.Name}" columns="1" collapsible="true" id="thisPBS">
+                <apex:facet name="header">
+                    <apex:outputpanel styleClass="customer-title" >
+                         <a href="#" onClick="openTab('{!customer.contact.Id}', '{!customer.contact.Name}');" >{!customer.contact.Name}</a>
+                         &nbsp;&nbsp;
+                         ({!customer.casesSize} cases)
+                         &nbsp;&nbsp;
+                         <apex:commandLink styleClass="right" action="{!relateAccount}" id="theButton"
+                                        onClick="if(!confirm('Are you sure you want to relate this case to {!customer.contact.name}')) return false;" oncomplete="testRefreshTab();" 
+                                        rendered="{!theCase.ContactId != customer.contact.Id}">
+                            <apex:image value="{!URLFOR($Resource.consoleWidgetResources, 'img/link.png')}" style="width:15px;height:15px;" title="Relate to current Case"/>
+                            <apex:param name="caseId" value="{!case.Id}"/>
+                            <apex:param name="accountId" value="{!customer.contact.account.Id}"/>
+                            <apex:param name="contactId" value="{!customer.contact.Id}"/>
+                        </apex:commandLink>
+                        
+                        <apex:commandLink styleClass="right" id="createCase" 
+                                        onClick="sforce.console.openPrimaryTab(null, '/500/e?retURL=%2F500%2Fo&cas4={!customer.contact.Account.Name}&cas3={!customer.contact.Name}', true); return false;" >
+                            <apex:image value="{!URLFOR($Resource.consoleWidgetResources, 'img/cases.png')}" style="width:68px; height:18px" title="Create related case" />
+                        </apex:commandLink>
+                        
+                    </apex:outputpanel>
+                </apex:facet>
+                
+                <apex:outputpanel styleClass="fixedTable">
+                <apex:pageBlockSection columns="2" collapsible="false" showHeader="false" >
+                	<apex:outputField value="{!customer.contact.account.Name}" />
+                </apex:pageBlockSection>
+                <apex:pageBlockSection columns="1" collapsible="false" showHeader="false" >
+                    <apex:pageBlockSectionItem >
+                        <apex:outputLabel value="Address" />
+                        <apex:outputText escape="false" value="{!
+                            if(LEN(customer.contact.MailingStreet)>0, customer.contact.MailingStreet + '<br />', '' ) +
+                            if(LEN(customer.contact.MailingCity)>0, customer.contact.MailingCity + '<br />', '' ) +
+                            if(LEN(customer.contact.MailingState)>0, customer.contact.MailingState + '<br />', '' ) +
+                            if(LEN(customer.contact.MailingPostalCode)>0, customer.contact.MailingPostalCode + '<br />', '' ) +
+                            if(LEN(customer.contact.MailingCountry)>0, customer.contact.MailingCountry, '' )}" 
+                        />
+                    </apex:pageBlockSectionItem>
+                </apex:pageBlockSection>
+                <apex:pageBlockTable value="{!customer.cases}" var="c" title="Cases" rendered="{!customer.casesSize > 0}"
+                							columnsWidth="20%, 20%, 20%, 20%, 20%">
+                    <apex:column >
+                        <apex:facet name="header">{!$ObjectType.Case.fields.CaseNumber.label}</apex:facet>
+                        <a href="#" onClick="openTab('{!c.Id}', '{!c.CaseNumber}');">{!c.CaseNumber}</a>
+                        <apex:commandLink styleClass="right" action="{!closeCaseAsDup}" id="theButton" rendered="{!c.Id != case.Id}"
+                                        onClick="if(!confirm('Are you sure you want to mark \'{!c.CaseNumber} - {!c.Subject}\' as a duplicate of \'{!case.CaseNumber} - {!Case.Subject}\'')) return false;" oncomplete="testRefreshTab();">
+                            <apex:image value="{!URLFOR($Resource.consoleWidgetResources, 'img/link.png')}" style="width:15px;height:15px;" title="Mark as duplicate"/>
+                            <apex:param name="caseId" value="{!c.Id}"/>
+                        </apex:commandLink>
+                    </apex:column>
+                    <apex:column value="{!c.CreatedDate}" headerValue="Open Date"/>
+                    <apex:column >
+                        <apex:facet name="header">{!$ObjectType.Case.fields.Subject.label}</apex:facet>
+                        <a href="#" onClick="openTab('{!c.Id}', '{!c.CaseNumber}');">{!c.Subject}</a>
+                    </apex:column>
+                    <apex:column value="{!c.Status}"/>
+                    <apex:column value="{!c.Owner.Name}"/>
+                </apex:pageBlockTable>
+                </apex:outputpanel>
+            </apex:pageBlockSection>
+        </apex:repeat>
+    </apex:pageBlock>
+    
+    <apex:pageBlock id="newCust" mode="edit" rendered="{!showNewCust && isInserted == 'false'}">
+		<apex:PageMessages id="mess2" />
+		
+		<apex:pageBlockButtons location="bottom">
+			<apex:actionStatus id="Accstatus" >
+				<apex:facet name="start">
+					<apex:outputPanel >
+						<apex:commandButton value="Saving..." disabled="true" />
+						<apex:commandButton value="Saving..." disabled="true" />
+					</apex:outputPanel>
+				</apex:facet>
+				<apex:facet name="stop">
+					<apex:outputPanel >
+						<apex:commandButton action="{!doSave}" value="Save" rerender="mess2, mainForm" oncomplete="accountRefreshTab();" status="Accstatus" />
+						<apex:commandButton action="{!showSearchOrList}" value="Cancel" rerender="mainForm" />
+					</apex:outputPanel>
+				</apex:facet>
+			</apex:actionStatus>
+		</apex:pageBlockButtons>
+		
+		<apex:pageBlockSection title="Create Account" columns="1">
+			<apex:inputField value="{!cont.Name}" />
+			<apex:inputField value="{!cont.Phone}" />
+		</apex:pageBlockSection>
+	</apex:pageBlock>
+	
+	<apex:pageblock id="creationSuccess" rendered="{!(isInserted == 'true')}" >
+		<apex:pageBlockSection title="Create Account" columns="1" collapsible="false">
+			<a href="#" onclick="openAccount('{!cont.Id}');">{!cont.Name}'s </a> <div style="display:inline;">Customer created.</div>
+		</apex:pageBlockSection>
+	</apex:pageblock>
+	
+    </div>
+</apex:form>
+</apex:page>

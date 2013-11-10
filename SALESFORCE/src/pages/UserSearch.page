@@ -1,0 +1,33 @@
+<apex:page controller="UserSearchController" showHeader="false" standardStylesheets="false">
+<apex:includeScript value="/support/console/27.0/integration.js"/>
+<script type="text/javascript">
+      function openRecordAsPrimaryTab(recordID, recordName) {
+          sforce.console.openPrimaryTab(null, '/'+recordID, true, recordName, openSuccess, recordName);
+      }
+      
+      var openSuccess = function openSuccess(result) {
+          //Report whether opening the new tab was successful
+          if (result.success != true) {
+              alert('Primary tab cannot be opened');
+          }
+      };
+</script>
+
+<apex:form >
+	<apex:actionFunction name="afDoSearch"  action="{!doSearch}" rerender="resultTable" />
+    <apex:inputText value="{!searchStr}" onkeyup="afDoSearch();" />
+	<apex:commandButton action="{!doSearch}" value="Find" id="btnSearch" rerender="resultTable" />
+</apex:form>
+
+<apex:dataTable id="resultTable" value="{!users}" var="usr">
+  <apex:column >
+		<chatter:follow entityId="{!usr.ID}" />
+	</apex:column>
+	<apex:column >
+		<apex:image id="profile" value="{!usr.SmallPhotoUrl}" width="25" />
+	</apex:column>
+	<apex:column >
+	 	<apex:outputLink value="#" id="uname" onclick="openRecordAsPrimaryTab('{!usr.ID}', '{!usr.Name}');return false;">{!usr.Name}</apex:outputLink>
+	</apex:column>
+</apex:dataTable>
+</apex:page>

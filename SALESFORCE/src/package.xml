@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>ActivityRemindersWidgetController</members>
+        <members>RelatedCustomerCasesController</members>
+        <members>UserSearchController</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>ActivityRemindersWidget</members>
+        <members>RelatedCustomerCases</members>
+        <members>UserSearch</members>
+        <name>ApexPage</name>
+    </types>
+    <types>
+        <members>consoleWidgetResources</members>
+        <name>StaticResource</name>
+    </types>
+    <version>27.0</version>
+</Package>
