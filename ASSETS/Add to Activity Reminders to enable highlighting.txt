@@ -1,0 +1,31 @@
+/*
+		This code block will call to find new tasks, then highlight the button when it finds them
+		
+		add this to command buttons so the highlight and button label update when actions occur
+		oncomplete="highlightWidget();"
+		*/
+		
+		function highlightWidget(){
+            Visualforce.remoting.Manager.invokeAction(
+                '{!$RemoteAction.ActivityRemindersWidgetController.getActiveRemindersAmount}', 
+                
+                function(result, event){
+                    if (event.status) {
+                        if (result > 0) {
+                            sforce.console.setCustomConsoleComponentButtonText('Reminders ('+result+')');
+                            sforce.console.setCustomConsoleComponentButtonStyle('background-color: #78dea9;');
+                        } else {
+                            sforce.console.setCustomConsoleComponentButtonText('Reminders');
+                            sforce.console.setCustomConsoleComponentButtonStyle('background-color: transparent');
+                        }
+                        refreshAll();
+                    }
+                }, 
+                {escape: true}
+            );
+        }
+        
+        window.onload = function(e){ 
+            highlightWidget();
+            setInterval(highlightWidget, 10000);
+        }
